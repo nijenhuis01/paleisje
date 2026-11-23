@@ -1,0 +1,50 @@
+LINDA'S VIDEO EDIT PALEISJE - als app op je iPhone (zonder App Store)
+=====================================================================
+
+Dit is een web-app. Je zet hem één keer online en daarna staat hij met een eigen
+icoon op je beginscherm. Hij opent schermvullend, zonder Safari-balken, en werkt
+daarna ook offline. Je video's blijven op je iPhone: er wordt niets geüpload.
+
+Bestanden in deze map (allemaal nodig):
+  index.html, manifest.json, sw.js, icon-180.png, icon-192.png, icon-512.png
+
+STAP 1 - Online zetten (kies één manier, alle drie gratis, HTTPS is verplicht)
+
+  A) GitHub Pages
+     1. Maak een gratis account op github.com en een nieuwe "public repository",
+        bijvoorbeeld "paleisje".
+     2. Klik op "Add file > Upload files" en sleep alle bestanden uit deze map erin.
+        Klik op "Commit changes".
+     3. Ga naar Settings > Pages > Branch: main > Save.
+     4. Na een minuut staat de app op https://<jouw-naam>.github.io/paleisje/
+
+  B) Netlify
+     1. Maak een gratis account op netlify.com.
+     2. Ga naar app.netlify.com/drop en sleep deze hele map erop.
+     3. Je krijgt meteen een https://....netlify.app-adres.
+
+  C) Je eigen webserver
+     Zet de bestanden in een map op je eigen (HTTPS-)server, bijvoorbeeld als
+     statische map naast je andere sites. Er is geen backend nodig.
+
+STAP 2 - Op je iPhone installeren
+  1. Open het adres in Safari.
+  2. Tik op de Deel-knop (vierkantje met pijl omhoog).
+  3. Kies "Zet op beginscherm" en tik op "Voeg toe".
+  4. Open voortaan het kroontje-icoon op je beginscherm.
+
+GEBRUIK OP DE IPHONE
+  - Importeren: tik op Media > Importeren > Fotobibliotheek. Ook video's die
+    alleen in iCloud staan, worden dan gedownload.
+  - Onderbalk: Bewerk, Media, Audio, Tekst, Stickers, Effecten, Overgang, Filters.
+  - Tijdlijn: swipe om te scrollen, tik op een clip om hem te selecteren en sleep
+    de witte randjes om in te korten.
+  - Exporteren: tik op Exporteren (720p is aanbevolen), houd je scherm aan en tik
+    daarna op "Bewaren / delen" > "Bewaar video". Dan staat hij in je Foto's.
+
+TIPS
+  - Exporteren gaat in "echte tijd": een video van 30 seconden duurt ongeveer
+    30 seconden. Laat de app zolang open en zet je scherm niet op slot.
+  - Lange video's in 4K maken de iPhone traag. Kort ze in of exporteer in 720p.
+  - Een nieuwe versie? Vervang de bestanden online. De app werkt zichzelf bij
+    zodra je hem opent terwijl je verbinding hebt.
