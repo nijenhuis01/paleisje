@@ -155,7 +155,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px 
 .prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2))}
 #toast{position:fixed;left:50%;bottom:calc(var(--tlh) + 64px);transform:translateX(-50%) translateY(20px);background:#2b2b36;border:1px solid #444;padding:9px 16px;border-radius:10px;opacity:0;transition:.25s;pointer-events:none;z-index:120;max-width:80vw}
 #toast.on{opacity:1;transform:translateX(-50%)}
-#pool{position:fixed;left:-9999px;top:0;width:2px;height:2px;overflow:hidden}
+#pool{position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:.01;pointer-events:none;z-index:-1}
+#pool video,#pool audio{width:2px;height:2px}
 /* splash */
 #splash{position:fixed;inset:0;z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 30% 20%,#3b1747 0%,#120c1c 55%,#08080b 100%);transition:opacity .6s ease,visibility .6s}
 #splash.hide{opacity:0;visibility:hidden}
@@ -358,7 +359,11 @@ function mediaRecord(m){return{id:m.id,name:m.name,type:m.type,blob:m.blob,dur:m
 
 /* ============ audio graph ============ */
 let actx=null,master=null,recDest=null;
-function ensureAudio(){if(actx){if(actx.state==='suspended')actx.resume();return}try{actx=new (window.AudioContext||window.webkitAudioContext)();master=actx.createGain();master.connect(actx.destination);recDest=actx.createMediaStreamDestination();master.connect(recDest);for(const arr of Object.values(vpool))arr.forEach(connectEl);Object.values(apool).forEach(connectEl)}catch(e){console.warn(e)}}
+try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
+let silentEl=null;
+function kickAudio(){if(!actx)return;try{if(IS_IOS){if(!silentEl){silentEl=new Audio(URL.createObjectURL(toWav(actx.createBuffer(2,22050,44100))));silentEl.loop=true;silentEl.setAttribute('playsinline','')}if(silentEl.paused)silentEl.play().catch(()=>{})}}catch(e){}try{if(actx.state!=='running')actx.resume().catch(()=>{});const b=actx.createBuffer(1,1,22050),src=actx.createBufferSource();src.buffer=b;src.connect(actx.destination);src.start(0)}catch(e){}}
+function ensureAudio(){try{if(navigator.audioSession&&navigator.audioSession.type!=='playback')navigator.audioSession.type='playback'}catch(e){}if(actx){if(actx.state!=='running'||(IS_IOS&&silentEl&&silentEl.paused))kickAudio();return}try{actx=new (window.AudioContext||window.webkitAudioContext)();master=actx.createGain();master.connect(actx.destination);recDest=actx.createMediaStreamDestination();master.connect(recDest);for(const arr of Object.values(vpool))arr.forEach(connectEl);Object.values(apool).forEach(connectEl);kickAudio()}catch(e){console.warn(e)}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&actx&&actx.state!=='running')actx.resume().catch(()=>{})});
 function connectEl(e){if(!actx||e.gain)return;try{const s=actx.createMediaElementSource(e.el);e.gain=actx.createGain();e.gain.gain.value=0;s.connect(e.gain).connect(master);e.el.volume=1}catch(err){console.warn(err)}}
 function setGain(e,v){if(e.gain){const g=e.gain.gain;if(Math.abs(g.value-v)>.001)g.setTargetAtTime(v,actx.currentTime,.015)}else e.el.volume=clamp(v,0,1)}
 addEventListener('pointerdown',ensureAudio,{capture:true});addEventListener('keydown',ensureAudio,{capture:true});addEventListener('touchend',ensureAudio,{capture:true});
@@ -394,7 +399,7 @@ function pauseAll(){for(const arr of Object.values(vpool))arr.forEach(e=>{e.el.p
 /* ============ rendering ============ */
 let PREV=.5;
 function canvasSize(scale){const[w,h]=ASPECTS[P.aspect];cv.width=Math.round(w*scale/2)*2;cv.height=Math.round(h*scale/2)*2;dirty=true}
-function fitCanvas(){const wr=$('#previewWrap');const[w,h]=ASPECTS[P.aspect];const s=Math.min((wr.clientWidth-28)/w,(wr.clientHeight-28)/h);cv.style.width=Math.max(50,Math.floor(w*s))+'px';cv.style.height=Math.max(50,Math.floor(h*s))+'px';if(!exporting){const want=clamp(Math.ceil(w*s*(devicePixelRatio||1))/w,.3,HAS_FILTER?.75:.42);if(Math.abs(want-PREV)>.05||!cv.width){PREV=want;canvasSize(PREV)}}}
+function fitCanvas(){const wr=$('#previewWrap');const[w,h]=ASPECTS[P.aspect];const s=Math.min((wr.clientWidth-28)/w,(wr.clientHeight-28)/h);cv.style.width=Math.max(50,Math.floor(w*s))+'px';cv.style.height=Math.max(50,Math.floor(h*s))+'px';if(!exporting){const want=clamp(Math.ceil(w*s*(devicePixelRatio||1))/w,.3,HAS_FILTER?.75:.58);if(Math.abs(want-PREV)>.05||!cv.width){PREV=want;canvasSize(PREV)}}}
 function applyAspect(){$('#aspect').value=P.aspect;canvasSize(PREV);fitCanvas()}
 addEventListener('resize',()=>{setHead();fitCanvas();renderTimeline();renderNav()});
 function filterParts(c){const f=(FILTERS.find(x=>x.id===c.filter)||FILTERS[0]).v,k=c.fint,a=c.adj;return{b:1+(f.b||0)*k+a.b,c:1+(f.c||0)*k+a.c,s:Math.max(0,1+(f.s||0)*k+a.s),sep:(f.sep||0)*k,gray:(f.gray||0)*k,hue:(f.hue||0)*k,temp:(f.temp||0)*k+a.temp}}
@@ -412,9 +417,9 @@ function parseFilter(str){if(FCACHE.has(str))return FCACHE.get(str);let M=[1,0,0
   case'blur':blur=v;break}if(F)M=mmul(F,M)}
  const id=[1,0,0,0,0,1,0,0,0,0,1,0];const ident=M.every((x,i)=>Math.abs(x-id[i])<.004);const r={M,blur,ident};if(FCACHE.size>400)FCACHE.clear();FCACHE.set(str,r);return r}
 function applyMatrix(g,w,h,M){const im=g.getImageData(0,0,w,h),d=im.data;const a=M.map((x,i)=>i%4===3?x*255:x);for(let i=0;i<d.length;i+=4){if(d[i+3]===0)continue;const r=d[i],gg=d[i+1],b=d[i+2];d[i]=a[0]*r+a[1]*gg+a[2]*b+a[3];d[i+1]=a[4]*r+a[5]*gg+a[6]*b+a[7];d[i+2]=a[8]*r+a[9]*gg+a[10]*b+a[11]}g.putImageData(im,0,0)}
-const layer=document.createElement('canvas'),lg=layer.getContext('2d',{willReadFrequently:true}),smc=document.createElement('canvas'),sg=smc.getContext('2d',{willReadFrequently:true});
+const layer=document.createElement('canvas'),lg=layer.getContext('2d',{willReadFrequently:true}),smc=document.createElement('canvas'),sg=smc.getContext('2d'),midc=document.createElement('canvas'),mg=midc.getContext('2d');
 function softDraw(draw,f){const F=parseFilter(f),W=cv.width,H=cv.height;if(F.ident&&F.blur<.5){draw(ctx);return}
- if(F.blur>=.5){const fac=clamp(F.blur/2.2,1.6,48),sw=Math.max(2,Math.ceil(W/fac)),sh=Math.max(2,Math.ceil(H/fac));if(smc.width!==sw||smc.height!==sh){smc.width=sw;smc.height=sh}sg.setTransform(1,0,0,1,0,0);sg.clearRect(0,0,sw,sh);sg.setTransform(sw/W,0,0,sh/H,0,0);draw(sg);if(!F.ident)applyMatrix(sg,sw,sh,F.M);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(smc,0,0,sw,sh,0,0,W,H);ctx.restore();return}
+ if(F.blur>=.5){const fac=clamp(F.blur/2.5,1.6,16),sw=Math.max(2,Math.ceil(W/fac)),sh=Math.max(2,Math.ceil(H/fac));if(smc.width!==sw||smc.height!==sh){smc.width=sw;smc.height=sh}sg.setTransform(1,0,0,1,0,0);sg.clearRect(0,0,sw,sh);sg.imageSmoothingEnabled=true;sg.imageSmoothingQuality='high';sg.setTransform(sw/W,0,0,sh/H,0,0);draw(sg);if(!F.ident)applyMatrix(sg,sw,sh,F.M);let src=smc,w=sw,hh=sh;if(fac>4){const mw=Math.min(W,sw*4),mh=Math.min(H,sh*4);if(midc.width!==mw||midc.height!==mh){midc.width=mw;midc.height=mh}mg.clearRect(0,0,mw,mh);mg.imageSmoothingEnabled=true;mg.imageSmoothingQuality='high';mg.drawImage(smc,0,0,sw,sh,0,0,mw,mh);src=midc;w=mw;hh=mh}ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(src,0,0,w,hh,0,0,W,H);ctx.restore();return}
  if(layer.width!==W||layer.height!==H){layer.width=W;layer.height=H}lg.setTransform(1,0,0,1,0,0);lg.clearRect(0,0,W,H);draw(lg);applyMatrix(lg,W,H,F.M);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(layer,0,0);ctx.restore()}
 function fdraw(f,draw){if(HAS_FILTER){ctx.filter=f;draw(ctx);ctx.filter='none'}else softDraw(draw,f)}
 function drawClip(c,tl,o){
@@ -423,7 +428,7 @@ function drawClip(c,tl,o){
  else{const e=getVid(c,false);if(!e)return;el=e.el;if(el.readyState<2||!el.videoWidth)return;iw=el.videoWidth;ih=el.videoHeight}
  const W=cv.width,H=cv.height,k=W/1080;ctx.save();if(o.clip)o.clip(W,H);ctx.globalAlpha=o.alpha==null?1:clamp(o.alpha,0,1);
  const cover=Math.max(W/iw,H/ih),contain=Math.min(W/iw,H/ih);
- if(c.fit==='fit'&&P.bgMode==='blur'){const s=cover*1.15,bx=W/2+(o.dx||0)*W,by=H/2+(o.dy||0)*H;fdraw(`blur(${Math.round(28*k)}px) brightness(.62) saturate(1.2)`,g=>{g.save();g.translate(bx,by);g.drawImage(el,-iw*s/2,-ih*s/2,iw*s,ih*s);g.restore()})}
+ if(c.fit==='fit'&&P.bgMode==='blur'){const s=cover*1.15,bx=W/2+(o.dx||0)*W,by=H/2+(o.dy||0)*H;const bd=g=>{g.save();g.translate(bx,by);g.drawImage(el,-iw*s/2,-ih*s/2,iw*s,ih*s);g.restore()};if(HAS_FILTER)fdraw(`blur(${Math.round(28*k)}px) brightness(.62) saturate(1.2)`,bd);else{fdraw(`blur(${Math.round(28*k)}px)`,bd);ctx.save();ctx.fillStyle='rgba(0,0,0,.38)';ctx.fillRect(0,0,W,H);ctx.restore()}}
  let z=1;const d=clipDur(c);if(c.kb)z*=1+.12*clamp(tl/d,0,1);
  if(c.fx.includes('pulse'))z*=1+.06*Math.pow(Math.max(0,Math.cos(tl*Math.PI*2)),14);
  let sx=0,sy=0;if(c.fx.includes('shake')){sx=(Math.sin(tl*37)+Math.sin(tl*23.7))*W*.006;sy=(Math.cos(tl*31.3)+Math.sin(tl*19.1))*W*.006;z*=1.04}
@@ -492,8 +497,9 @@ function play(){if(!P.clips.length&&!P.audios.length&&!P.texts.length)return;unl
 function stop(){playing=false;pauseAll();$('#bPlay').textContent='▶';dirty=true}
 function toggle(){playing?stop():play()}
 function updateTime(){$('#time').innerHTML=`<b>${fmt(T)}</b> / ${fmt(projDur())}`;const ph=$('#playhead');if(ph)ph.style.left=(HEAD+T*pps)+'px'}
+function videoClock(t){const A=activeVideo(t);if(A.list.length!==1)return null;const l=A.list[0].l,m=mediaById(l.c.mediaId);if(!m||m.type!=='video')return null;const e=getVid(l.c,false);if(!e)return null;const el=e.el;if(el.paused||el.seeking||el.readyState<3)return null;return l.start+(el.currentTime-l.c.in)/l.c.speed}
 function loop(now){
- if(playing){T=t0+(now-p0)/1000;const D=projDur();if(T>=D){T=D;if(exporting){exportDone()}stop()}}
+ if(playing){T=t0+(now-p0)/1000;const vt=videoClock(T);if(vt!=null&&vt>T-.15&&vt<T+.6){T=vt;t0=T;p0=now}const D=projDur();if(T>=D){T=D;if(exporting){exportDone()}stop()}}
  if(playing||dirty){dirty=false;syncMedia(T);render(T);updateTime();if(playing&&!exporting){const sc=$('#tlscroll'),x=HEAD+T*pps;if(x>sc.scrollLeft+sc.clientWidth-40||x<sc.scrollLeft+HEAD)sc.scrollLeft=x-HEAD-60}}
  requestAnimationFrame(loop)}
 
