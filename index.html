@@ -165,6 +165,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px 
 .prow .pi small{display:block;color:var(--mut);font-size:11px;padding-left:5px}
 .prow .pb{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
 .prow .pb button{padding:5px 8px;font-size:12px}
+button.savebig{display:block;width:100%;padding:16px;font-size:18px;border-radius:14px;margin-top:6px}
 #pool{position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:.01;pointer-events:none;z-index:-1}
 #pool video,#pool audio{width:2px;height:2px}
 /* splash */
@@ -822,11 +823,17 @@ function exportFail(msg){clearInterval(expTimer);exporting=false;stop();try{if(r
 async function waitReady(t){const A=activeVideo(t);const els=A.list.map(x=>getVid(x.l.c,false)).filter(Boolean).map(e=>e.el);const st=performance.now();while(els.some(el=>el.readyState<3||el.seeking)&&performance.now()-st<4000)await new Promise(r=>setTimeout(r,50))}
 function exportDone(){setTimeout(()=>{if(rec&&rec.state!=='inactive')rec.stop()},250)}
 function onRecStop(){clearInterval(expTimer);exporting=false;try{wakeLock&&wakeLock.release()}catch(e){}wakeLock=null;if(!recChunks.length){exportFail('Er is geen beeld opgenomen. Houd de app op de voorgrond en het scherm aan.');return}canvasSize(PREV);fitCanvas();const blob=new Blob(recChunks,{type:(recMime||recChunks[0].type||'video/mp4').split(';')[0]});lastExport=blob;const ext=/mp4/.test(blob.type)||/mp4/.test(recMime)?'mp4':'webm';const name=(P.name||'video').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'.'+ext;const url=URL.createObjectURL(blob);
- $('#mbox').innerHTML=`<h2>Klaar! 🎉</h2><video controls src="${url}"></video><p class="note">${name} · ${(blob.size/1048576).toFixed(1)} MB</p><p class="note" id="dlNote"></p>`;const f=h('div',{class:'foot'});const sv=h('button',{class:'primary'},isPhone()?'⬇ Bewaren / delen':'⬇ Opslaan op pc');sv.onclick=()=>saveExport(blob,name,url);f.append(h('button',{onclick:closeModal},'Sluiten'),sv);$('#mbox').append(f);toast('Export klaar ✓')}
+ if(isPhone()||IS_IOS){
+  $('#mbox').innerHTML=`<h2>Klaar! 🎉</h2><video controls playsinline src="${url}" style="max-height:34vh"></video><p class="note">${name} · ${(blob.size/1048576).toFixed(1)} MB</p>`;
+  const big=h('button',{class:'primary savebig',id:'bSavePhotos'},'📸 Bewaar in Foto\'s');const hint=h('p',{class:'note',id:'dlNote',style:'text-align:center;margin-top:8px'},'Tik hierboven en kies daarna ',h('b',null,'“Bewaar video”'),'.');
+  big.onclick=async()=>{big.disabled=true;big.textContent='Even geduld…';const r=await saveExport(blob,name,url);big.disabled=false;if(r==='shared'){big.textContent='✓ Opnieuw bewaren';hint.innerHTML='Staat hij er niet? Tik nog eens en kies <b>“Bewaar video”</b>.'}else big.textContent='📸 Bewaar in Foto\'s'};
+  $('#mbox').append(big,hint,h('div',{class:'foot'},h('button',{onclick:closeModal},'Sluiten')));
+  if(navigator.vibrate)try{navigator.vibrate(60)}catch(e){}toast('Export klaar ✓ — tik op “Bewaar in Foto\'s”',5000);return}
+ $('#mbox').innerHTML=`<h2>Klaar! 🎉</h2><video controls src="${url}"></video><p class="note">${name} · ${(blob.size/1048576).toFixed(1)} MB</p><p class="note" id="dlNote"></p>`;const f=h('div',{class:'foot'});const sv=h('button',{class:'primary'},'⬇ Opslaan op pc');sv.onclick=()=>saveExport(blob,name,url);f.append(h('button',{onclick:closeModal},'Sluiten'),sv);$('#mbox').append(f);toast('Export klaar ✓')}
 async function getDownloads(){try{if(window.claude&&typeof window.claude.use==='function')return await window.claude.use('downloads')}catch(e){}return null}
 async function saveExport(blob,name,url){const n=$('#dlNote');
- if(!(window.claude&&window.claude.use)&&navigator.canShare){try{const file=new File([blob],name,{type:blob.type||'video/mp4'});if(navigator.canShare({files:[file]})){await navigator.share({files:[file]});if(n)n.textContent='Kies "Bewaar video" om hem in je Foto\'s te zetten ✓';return}}catch(e){if(e&&e.name==='AbortError'){if(n)n.textContent='Delen geannuleerd.';return}}}
- const dl=await getDownloads();if(dl){try{await dl.save({filename:name,data:blob});if(n)n.textContent='Opgeslagen in je Downloads-map ✓';return}catch(e){if(e&&e.code==='declined'){if(n)n.textContent='Opslaan geannuleerd.';return}}}
+ if(!(window.claude&&window.claude.use)&&navigator.canShare){try{const file=new File([blob],name,{type:/mp4/.test(blob.type)||/\.mp4$/.test(name)?'video/mp4':(blob.type||'video/mp4')});if(navigator.canShare({files:[file]})){await navigator.share({files:[file]});return'shared'}}catch(e){if(e&&e.name==='AbortError'){if(n&&!isPhone())n.textContent='Delen geannuleerd.';return'cancel'}}}
+ const dl=await getDownloads();if(dl){try{await dl.save({filename:name,data:blob});if(n&&!isPhone())n.textContent='Opgeslagen in je Downloads-map ✓';return'shared'}catch(e){if(e&&e.code==='declined'){if(n&&!isPhone())n.textContent='Opslaan geannuleerd.';return'cancel'}}}
  try{const a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove()}catch(e){}if(n)n.innerHTML='Lukt opslaan niet? Klik met de rechtermuisknop op de video hierboven → <b>Video opslaan als…</b>'}
 
 /* ============ fonts, help, keyboard, init ============ */
