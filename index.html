@@ -155,6 +155,16 @@ header{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px 
 .prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2))}
 #toast{position:fixed;left:50%;bottom:calc(var(--tlh) + 64px);transform:translateX(-50%) translateY(20px);background:#2b2b36;border:1px solid #444;padding:9px 16px;border-radius:10px;opacity:0;transition:.25s;pointer-events:none;z-index:120;max-width:80vw}
 #toast.on{opacity:1;transform:translateX(-50%)}
+.plist{display:flex;flex-direction:column;gap:8px;margin-top:12px;max-height:55vh;overflow:auto}
+.prow{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px}
+.prow.cur{border-color:var(--acc)}
+.prow .pt{width:54px;height:54px;border-radius:9px;background:#26262f center/cover;flex:none;display:grid;place-items:center;font-size:22px}
+.prow .pi{flex:1;min-width:0}
+.prow .pi input{width:100%;font-weight:700;background:transparent;border-color:transparent;padding:3px 4px}
+.prow .pi input:focus{border-color:var(--line);background:#101015}
+.prow .pi small{display:block;color:var(--mut);font-size:11px;padding-left:5px}
+.prow .pb{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.prow .pb button{padding:5px 8px;font-size:12px}
 #pool{position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:.01;pointer-events:none;z-index:-1}
 #pool video,#pool audio{width:2px;height:2px}
 /* splash */
@@ -173,7 +183,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px 
 @media (max-width:820px){
  #app{grid-template-rows:calc(48px + env(safe-area-inset-top)) minmax(0,1fr) auto auto;height:100dvh}
  header{padding:env(safe-area-inset-top) 8px 0;gap:6px}
- header #pname,#bICloud,#bNew,.logo span.t{display:none}
+ header #pname,#bICloud,#bNew,.logo span.t,.bl2{display:none}
+ #bProj{padding:6px 9px}
  #aspect{max-width:84px;padding:5px 4px}
  #bExport{padding:6px 10px}
  #workspace{display:block;position:relative}
@@ -228,6 +239,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px 
   <select id="aspect" title="Beeldverhouding">
     <option value="9:16">9:16 · TikTok/Reels</option><option value="16:9">16:9 · YouTube</option><option value="1:1">1:1 · Vierkant</option><option value="4:5">4:5 · Instagram</option><option value="4:3">4:3</option><option value="21:9">21:9 · Bioscoop</option>
   </select>
+  <button id="bProj" title="Projecten openen en opslaan">📁<span class="bl2"> Projecten</span></button>
   <button id="bICloud">☁️ iCloud-hulp</button>
   <button id="bNew">Nieuw</button>
   <button id="bExport" class="primary">⬇ Exporteren</button>
@@ -325,7 +337,7 @@ const ANIMS_OUT=[['none','Geen'],['fade','Uitfaden'],['pop','Krimpen'],['slide',
 /* ============ state ============ */
 let media=[];const mediaById=id=>media.find(m=>m.id===id);
 let P=newProject();
-function newProject(){return{name:'Mijn project',aspect:'9:16',bgMode:'blur',bgColor:'#000000',clips:[],texts:[],audios:[]}}
+function newProject(){return{id:uid(),name:'Mijn project',aspect:'9:16',bgMode:'blur',bgColor:'#000000',clips:[],texts:[],audios:[]}}
 let sel=null,T=0,playing=false,t0=0,p0=0,pps=60,dirty=true,exporting=false,tab='media';
 let hist=[],fut=[],lastKey=null,lastTime=0;
 const cv=$('#cv'),ctx=cv.getContext('2d');
@@ -354,7 +366,28 @@ const idb={db:null,
  open(){return new Promise(res=>{try{const r=indexedDB.open('linda-video-paleisje',1);r.onupgradeneeded=()=>{r.result.createObjectStore('media',{keyPath:'id'});r.result.createObjectStore('kv')};r.onsuccess=()=>{this.db=r.result;res(true)};r.onerror=()=>res(false)}catch(e){res(false)}})},
  op(store,mode,fn){return new Promise(res=>{if(!this.db)return res(null);try{const tx=this.db.transaction(store,mode);const req=fn(tx.objectStore(store));tx.oncomplete=()=>res(req&&req.result);tx.onerror=()=>res(null);tx.onabort=()=>res(null)}catch(e){res(null)}})},
  put(s,v,k){return this.op(s,'readwrite',st=>k!==undefined?st.put(v,k):st.put(v))},get(s,k){return this.op(s,'readonly',st=>st.get(k))},all(s){return this.op(s,'readonly',st=>st.getAll())},del(s,k){return this.op(s,'readwrite',st=>st.delete(k))},clear(s){return this.op(s,'readwrite',st=>st.clear())}};
-let saveT;function scheduleSave(){clearTimeout(saveT);saveT=setTimeout(()=>idb.put('kv',JSON.parse(JSON.stringify(P,(k,v)=>k==='_bb'?undefined:v)),'project'),600)}
+let saveT,projIndex=[];
+const hasContent=x=>x.clips.length||x.texts.length||x.audios.length;
+function projMeta(){const m=P.clips[0]&&mediaById(P.clips[0].mediaId);return{id:P.id,name:P.name,updated:Date.now(),thumb:(m&&m.thumb)||null,dur:projDur(),aspect:P.aspect,n:P.clips.length+P.texts.length+P.audios.length}}
+async function saveNow(){clearTimeout(saveT);if(!P.id)P.id=uid();const inIdx=projIndex.some(x=>x.id===P.id);if(!hasContent(P)&&!inIdx){await idb.put('kv',P.id,'current');return}
+ await idb.put('kv',JSON.parse(JSON.stringify(P,(k,v)=>k==='_bb'?undefined:v)),'proj:'+P.id);const meta=projMeta();const i=projIndex.findIndex(x=>x.id===P.id);if(i>=0)projIndex[i]=meta;else projIndex.unshift(meta);projIndex.sort((a,b)=>b.updated-a.updated);await idb.put('kv',projIndex,'projIndex');await idb.put('kv',P.id,'current')}
+function scheduleSave(){clearTimeout(saveT);saveT=setTimeout(saveNow,600)}
+function normProject(p){const q=Object.assign(newProject(),p);q.clips=(q.clips||[]).filter(c=>mediaById(c.mediaId));q.audios=(q.audios||[]).filter(a=>mediaById(a.mediaId));q.texts=q.texts||[];q.clips.forEach(c=>{c.fx=c.fx||[];c.adj=Object.assign({b:0,c:0,s:0,temp:0,vig:0},c.adj||{});c.trans=c.trans||{type:'none',dur:.6}});return q}
+function loadIntoEditor(p){stop();P=normProject(p);hist=[];fut=[];lastKey=null;sel=null;T=0;applyAspect();$('#pname').value=P.name;afterChange({left:true});ensureFonts();pps=clamp((tlScroll.clientWidth-HEAD-40)/Math.max(1,projDur()),8,120);renderTimeline();dirty=true}
+async function openProject(id){if(id===P.id){closeModal();return}await saveNow();const d=await idb.get('kv','proj:'+id);if(!d){toast('Project niet gevonden');return}loadIntoEditor(d);await idb.put('kv',P.id,'current');closeModal();toast('“'+P.name+'” geopend')}
+async function newProj(){await saveNow();const keep=P.aspect;const n=newProject();n.aspect=keep;n.name='Project '+(projIndex.length+1);loadIntoEditor(n);await idb.put('kv',P.id,'current');toast(projIndex.length?'Nieuw project gestart — je vorige staat bij 📁 Projecten':'Nieuw project gestart')}
+async function dupProj(id){await saveNow();const d=id===P.id?JSON.parse(JSON.stringify(P)):await idb.get('kv','proj:'+id);if(!d)return;d.id=uid();d.name=(d.name||'Project')+' (kopie)';await idb.put('kv',d,'proj:'+d.id);const meta=Object.assign({},projIndex.find(x=>x.id===id)||projMeta(),{id:d.id,name:d.name,updated:Date.now()});projIndex.unshift(meta);await idb.put('kv',projIndex,'projIndex');projectsDialog()}
+async function delProj(id){projIndex=projIndex.filter(x=>x.id!==id);await idb.put('kv',projIndex,'projIndex');await idb.del('kv','proj:'+id);if(id===P.id){if(projIndex.length){const d=await idb.get('kv','proj:'+projIndex[0].id);loadIntoEditor(d||newProject())}else loadIntoEditor(newProject());await idb.put('kv',P.id,'current')}projectsDialog();toast('Project verwijderd')}
+async function renameProj(id,name){name=(name||'').trim()||'Naamloos';if(id===P.id){mutate(()=>P.name=name)}else{const d=await idb.get('kv','proj:'+id);if(d){d.name=name;await idb.put('kv',d,'proj:'+id)}}const m=projIndex.find(x=>x.id===id);if(m){m.name=name;await idb.put('kv',projIndex,'projIndex')}}
+async function projectsDialog(){await saveNow();const list=[...projIndex];if(!list.some(x=>x.id===P.id))list.unshift(projMeta());
+ const b=modal(`<h2>📁 Projecten</h2><p class="note">Je projecten worden automatisch bewaard op dit apparaat, in deze browser of app. Tik op een naam om die te wijzigen.</p>`,[{label:'Sluiten'}]);
+ const top=h('div',{class:'btns'},h('button',{class:'primary',onclick:()=>{closeModal();newProj()}},'＋ Nieuw project'),h('button',{onclick:async()=>{await saveNow();toast('Project opgeslagen ✓');projectsDialog()}},'💾 Nu opslaan'));
+ const pl=h('div',{class:'plist'});const dt=t=>new Date(t).toLocaleString('nl-NL',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+ list.forEach(x=>{const cur=x.id===P.id;const nm=h('input',{value:x.name,'aria-label':'Projectnaam'});nm.onchange=()=>renameProj(x.id,nm.value);
+  let armed=false;const del=h('button',{class:'danger',title:'Verwijderen'},'🗑');del.onclick=()=>{if(!armed){armed=true;del.textContent='Zeker?';setTimeout(()=>{armed=false;del.textContent='🗑'},3000);return}delProj(x.id)};
+  pl.append(h('div',{class:'prow'+(cur?' cur':'')},h('div',{class:'pt',style:x.thumb?`background-image:url(${x.thumb})`:''},x.thumb?'':'🎬'),h('div',{class:'pi'},nm,h('small',null,`${x.n||0} ${(x.n||0)===1?'item':'items'} · ${fmt(x.dur)} · ${x.aspect||''} · ${cur?'nu geopend':dt(x.updated)}`)),
+   h('div',{class:'pb'},cur?h('button',{disabled:true},'Geopend'):h('button',{class:'primary',onclick:()=>openProject(x.id)},'Openen'),h('button',{title:'Kopie maken',onclick:()=>dupProj(x.id)},'⧉'),del)))});
+ b.insertBefore(pl,b.querySelector('.foot'));b.insertBefore(top,pl)}
 function mediaRecord(m){return{id:m.id,name:m.name,type:m.type,blob:m.blob,dur:m.dur,w:m.w,h:m.h,thumb:m.thumb,wave:m.wave,err:m.err,gen:m.gen}}
 
 /* ============ audio graph ============ */
@@ -363,7 +396,7 @@ try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
 let silentEl=null;
 function kickAudio(){if(!actx)return;try{if(IS_IOS){if(!silentEl){silentEl=new Audio(URL.createObjectURL(toWav(actx.createBuffer(2,22050,44100))));silentEl.loop=true;silentEl.setAttribute('playsinline','')}if(silentEl.paused)silentEl.play().catch(()=>{})}}catch(e){}try{if(actx.state!=='running')actx.resume().catch(()=>{});const b=actx.createBuffer(1,1,22050),src=actx.createBufferSource();src.buffer=b;src.connect(actx.destination);src.start(0)}catch(e){}}
 function ensureAudio(){try{if(navigator.audioSession&&navigator.audioSession.type!=='playback')navigator.audioSession.type='playback'}catch(e){}if(actx){if(actx.state!=='running'||(IS_IOS&&silentEl&&silentEl.paused))kickAudio();return}try{actx=new (window.AudioContext||window.webkitAudioContext)();master=actx.createGain();master.connect(actx.destination);recDest=actx.createMediaStreamDestination();master.connect(recDest);for(const arr of Object.values(vpool))arr.forEach(connectEl);Object.values(apool).forEach(connectEl);kickAudio()}catch(e){console.warn(e)}}
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&actx&&actx.state!=='running')actx.resume().catch(()=>{})});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&actx&&actx.state!=='running')actx.resume().catch(()=>{});if(!document.hidden&&exporting){toast('Tijdens exporteren moet de app open blijven',5000)}});
 function connectEl(e){if(!actx||e.gain)return;try{const s=actx.createMediaElementSource(e.el);e.gain=actx.createGain();e.gain.gain.value=0;s.connect(e.gain).connect(master);e.el.volume=1}catch(err){console.warn(err)}}
 function setGain(e,v){if(e.gain){const g=e.gain.gain;if(Math.abs(g.value-v)>.001)g.setTargetAtTime(v,actx.currentTime,.015)}else e.el.volume=clamp(v,0,1)}
 addEventListener('pointerdown',ensureAudio,{capture:true});addEventListener('keydown',ensureAudio,{capture:true});addEventListener('touchend',ensureAudio,{capture:true});
@@ -498,8 +531,9 @@ function stop(){playing=false;pauseAll();$('#bPlay').textContent='▶';dirty=tru
 function toggle(){playing?stop():play()}
 function updateTime(){$('#time').innerHTML=`<b>${fmt(T)}</b> / ${fmt(projDur())}`;const ph=$('#playhead');if(ph)ph.style.left=(HEAD+T*pps)+'px'}
 function videoClock(t){const A=activeVideo(t);if(A.list.length!==1)return null;const l=A.list[0].l,m=mediaById(l.c.mediaId);if(!m||m.type!=='video')return null;const e=getVid(l.c,false);if(!e)return null;const el=e.el;if(el.paused||el.seeking||el.readyState<3)return null;return l.start+(el.currentTime-l.c.in)/l.c.speed}
+let lastVt=null,frozen=0;
 function loop(now){
- if(playing){T=t0+(now-p0)/1000;const vt=videoClock(T);if(vt!=null&&vt>T-.15&&vt<T+.6){T=vt;t0=T;p0=now}const D=projDur();if(T>=D){T=D;if(exporting){exportDone()}stop()}}
+ if(playing){T=t0+(now-p0)/1000;if(!exporting){const vt=videoClock(T);if(vt!=null&&lastVt!=null&&vt>lastVt+1e-4)frozen=0;else frozen+=1;lastVt=vt;if(vt!=null&&frozen<15&&vt>T-.15&&vt<T+.6){T=vt;t0=T;p0=now}}const D=projDur();if(T>=D){T=D;if(exporting){exportDone()}stop()}}
  if(playing||dirty){dirty=false;syncMedia(T);render(T);updateTime();if(playing&&!exporting){const sc=$('#tlscroll'),x=HEAD+T*pps;if(x>sc.scrollLeft+sc.clientWidth-40||x<sc.scrollLeft+HEAD)sc.scrollLeft=x-HEAD-60}}
  requestAnimationFrame(loop)}
 
@@ -616,7 +650,7 @@ function tabMedia(b){
  vis.forEach(m=>{const it=h('div',{class:'mi'+(m.err?' err':''),title:m.err||m.name,style:m.thumb?`background-image:url(${m.thumb})`:''},h('div',{class:'n'},m.name),m.type==='video'&&m.dur?h('div',{class:'d'},fmt(m.dur)):h('div',{class:'d'},'📷'),h('div',{class:'add'},'＋'),m.err?h('div',{class:'e'},'Niet ondersteund'):null);
   const x=h('button',{class:'x',title:'Verwijderen uit bibliotheek',onclick:e=>{e.stopPropagation();removeMedia(m)}},'✕');it.append(x);it.onclick=()=>addToTimeline(m);g.append(it)});b.append(g);
  b.append(h('div',{class:'note'},'Klik op een item om het op de afspeelkop in de tijdlijn te zetten.'))}
-function removeMedia(m){const used=P.clips.some(c=>c.mediaId===m.id)||P.audios.some(a=>a.mediaId===m.id);if(used){toast('Dit bestand wordt nog gebruikt in de tijdlijn');return}media=media.filter(x=>x!==m);idb.del('media',m.id);(vpool[m.id]||[]).forEach(e=>{e.el.removeAttribute('src');e.el.remove()});delete vpool[m.id];renderLeft()}
+async function removeMedia(m){const uses=x=>x&&((x.clips||[]).some(c=>c.mediaId===m.id)||(x.audios||[]).some(a=>a.mediaId===m.id));if(uses(P)){toast('Dit bestand wordt nog gebruikt in de tijdlijn');return}for(const x of projIndex){if(x.id===P.id)continue;const d=await idb.get('kv','proj:'+x.id);if(uses(d)){toast('Dit bestand wordt gebruikt in project “'+x.name+'”');return}}media=media.filter(x=>x!==m);idb.del('media',m.id);(vpool[m.id]||[]).forEach(e=>{e.el.removeAttribute('src');e.el.remove()});delete vpool[m.id];renderLeft()}
 function tabAudio(b){
  b.append(h('div',{class:'ph'},'Rechtenvrije muziek'),h('div',{class:'note'},'Deze nummers worden hier op je pc gecomponeerd: 100% rechtenvrij, ook voor TikTok/YouTube.'));
  const ls=h('select',{onchange:e=>musicLen=e.target.value},...[['auto','Lengte: zoals video'],['30','30 sec'],['60','1 min'],['90','1,5 min'],['120','2 min'],['180','3 min']].map(([v,n])=>h('option',{value:v,selected:musicLen===v},n)));b.append(h('div',{style:'margin-bottom:8px'},ls));
@@ -677,7 +711,7 @@ function renderProps(){renderNav();const b=$('#propsBody');b.innerHTML='';const 
   selectRow('Achtergrond',[['blur','Vervaagd'],['black','Zwart'],['white','Wit'],['color','Kleur']],()=>P.bgMode,v=>P.bgMode=v),
   P.bgMode==='color'?colorRow('Kleur',()=>P.bgColor,v=>P.bgColor=v,'bg'):null,
   h('div',{class:'note',style:'margin-top:14px'},`${P.clips.length} clips · ${P.texts.length} teksten · ${P.audios.length} audio · ${fmt(projDur())}`),
-  h('div',{class:'empty'},h('b',null,'Niets geselecteerd'),'Tik of klik op een clip, tekst of audio in de tijdlijn om die te bewerken.'),h('div',{class:'btns'},h('button',{onclick:()=>$('#bNew').click()},'🆕 Nieuw project'),h('button',{onclick:iCloudHelp},'☁️ iCloud-hulp')),
+  h('div',{class:'empty'},h('b',null,'Niets geselecteerd'),'Tik of klik op een clip, tekst of audio in de tijdlijn om die te bewerken.'),h('div',{class:'btns'},h('button',{onclick:projectsDialog},'📁 Projecten'),h('button',{onclick:()=>$('#bNew').click()},'🆕 Nieuw project'),h('button',{onclick:iCloudHelp},'☁️ iCloud-hulp')),
   h('div',{class:'note'},h('b',null,'Sneltoetsen'),h('br'),'Spatie = afspelen · S = splitsen · Delete = verwijderen · Ctrl+Z = ongedaan · Ctrl+D = dupliceren · ←/→ = per frame · Ctrl+scroll = zoomen'));return}
  const del=h('button',{class:'danger',onclick:delSel},'🗑 Verwijderen'),dup=h('button',{onclick:dupSel},'⧉ Dupliceren'),spl=h('button',{onclick:splitAt},'✂ Splitsen');
  if(sel.kind==='clip'){const c=o,m=mediaById(c.mediaId)||{},idx=P.clips.indexOf(c),img=m.type==='image';
@@ -775,11 +809,19 @@ async function startExport(scale,fps){
  seek(0);syncMedia(0);render(0);await waitReady(0);
  const stream=cv.captureStream(fps);const tracks=[...stream.getVideoTracks()];if(recDest)tracks.push(...recDest.stream.getAudioTracks());const ms=new MediaStream(tracks);
  const px=cv.width*cv.height;recChunks=[];try{rec=new MediaRecorder(ms,{mimeType:mime,videoBitsPerSecond:Math.round(clamp(px*fps*.2,4e6,40e6)),audioBitsPerSecond:192000})}catch(e){exporting=false;canvasSize(PREV);fitCanvas();modal('<h2>Export mislukt</h2><p>'+esc(e.message)+'</p>');return}
- rec.ondataavailable=e=>{if(e.data&&e.data.size)recChunks.push(e.data)};rec.onstop=onRecStop;rec.start(500);
- await new Promise(r=>setTimeout(r,150));play();const D=projDur();clearInterval(expTimer);expTimer=setInterval(()=>{if(!exporting)return clearInterval(expTimer);const b=$('#eBar'),i=$('#eInfo');if(b)b.style.width=(T/D*100).toFixed(1)+'%';if(i)i.textContent=`${fmt(T)} van ${fmt(D)} — even geduld`},200)}
+ rec.ondataavailable=e=>{if(e.data&&e.data.size)recChunks.push(e.data)};rec.onstop=onRecStop;rec.onerror=ev=>{exportFail('Opnamefout: '+((ev.error&&ev.error.message)||'onbekend'))};
+ try{rec.start(500)}catch(e1){try{recMime='';rec=new MediaRecorder(ms);rec.ondataavailable=e=>{if(e.data&&e.data.size)recChunks.push(e.data)};rec.onstop=onRecStop;rec.start(500);recMime=rec.mimeType||'video/mp4'}catch(e2){exportFail('Je browser kan deze video niet opnemen ('+esc(e2.message)+').');return}}
+ try{if(navigator.wakeLock)wakeLock=await navigator.wakeLock.request('screen')}catch(e){}
+ await new Promise(r=>setTimeout(r,150));play();const D=projDur();let lastT=-1,stall=0;clearInterval(expTimer);expTimer=setInterval(()=>{if(!exporting)return clearInterval(expTimer);const b=$('#eBar'),i=$('#eInfo');if(b)b.style.width=(T/D*100).toFixed(1)+'%';if(i)i.textContent=`${fmt(T)} van ${fmt(D)} — even geduld, houd je scherm aan`;
+  if(Math.abs(T-lastT)<.01)stall+=.2;else stall=0;lastT=T;
+  if(stall>=2&&stall<2.3){kickAudio();if(!playing){t0=T;p0=performance.now();playing=true}}
+  if(stall>=8){toast('De export bleef hangen. Ik sla op wat er tot nu toe is.',6000);stop();exportDone()}
+  if(T>=D-.01&&rec&&rec.state==='recording'&&stall>=1){stop();exportDone()}},200)}
+let wakeLock=null;
+function exportFail(msg){clearInterval(expTimer);exporting=false;stop();try{if(rec&&rec.state!=='inactive'){rec.onstop=null;rec.stop()}}catch(e){}try{wakeLock&&wakeLock.release()}catch(e){}canvasSize(PREV);fitCanvas();$('#mbox').innerHTML=`<h2>Export mislukt</h2><p>${msg}</p><p class="note">Tip: probeer 720p, sluit andere apps, en houd het scherm aan tijdens het exporteren.</p>`;const f=h('div',{class:'foot'},h('button',{onclick:closeModal},'Sluiten'));$('#mbox').append(f);$('#modal').classList.add('on')}
 async function waitReady(t){const A=activeVideo(t);const els=A.list.map(x=>getVid(x.l.c,false)).filter(Boolean).map(e=>e.el);const st=performance.now();while(els.some(el=>el.readyState<3||el.seeking)&&performance.now()-st<4000)await new Promise(r=>setTimeout(r,50))}
 function exportDone(){setTimeout(()=>{if(rec&&rec.state!=='inactive')rec.stop()},250)}
-function onRecStop(){clearInterval(expTimer);exporting=false;canvasSize(PREV);fitCanvas();const blob=new Blob(recChunks,{type:recMime.split(';')[0]});lastExport=blob;const ext=recMime.includes('mp4')?'mp4':'webm';const name=(P.name||'video').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'.'+ext;const url=URL.createObjectURL(blob);
+function onRecStop(){clearInterval(expTimer);exporting=false;try{wakeLock&&wakeLock.release()}catch(e){}wakeLock=null;if(!recChunks.length){exportFail('Er is geen beeld opgenomen. Houd de app op de voorgrond en het scherm aan.');return}canvasSize(PREV);fitCanvas();const blob=new Blob(recChunks,{type:(recMime||recChunks[0].type||'video/mp4').split(';')[0]});lastExport=blob;const ext=/mp4/.test(blob.type)||/mp4/.test(recMime)?'mp4':'webm';const name=(P.name||'video').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-')+'.'+ext;const url=URL.createObjectURL(blob);
  $('#mbox').innerHTML=`<h2>Klaar! 🎉</h2><video controls src="${url}"></video><p class="note">${name} · ${(blob.size/1048576).toFixed(1)} MB</p><p class="note" id="dlNote"></p>`;const f=h('div',{class:'foot'});const sv=h('button',{class:'primary'},isPhone()?'⬇ Bewaren / delen':'⬇ Opslaan op pc');sv.onclick=()=>saveExport(blob,name,url);f.append(h('button',{onclick:closeModal},'Sluiten'),sv);$('#mbox').append(f);toast('Export klaar ✓')}
 async function getDownloads(){try{if(window.claude&&typeof window.claude.use==='function')return await window.claude.use('downloads')}catch(e){}return null}
 async function saveExport(blob,name,url){const n=$('#dlNote');
@@ -800,17 +842,19 @@ function iCloudHelp(){modal(`<h2>☁️ Video's uit iCloud importeren</h2>
 $('#bICloud').onclick=iCloudHelp;$('#bExport').onclick=exportDialog;$('#bUndo').onclick=undo;$('#bRedo').onclick=redo;$('#bPlay').onclick=toggle;$('#bStart').onclick=()=>seek(0);$('#bBack').onclick=()=>seek(T-1/30);$('#bFwd').onclick=()=>seek(T+1/30);
 $('#tSplit').onclick=splitAt;$('#tDel').onclick=delSel;$('#tDup').onclick=dupSel;$('#tText').onclick=()=>{addText({});openTab('text')};$('#tMusic').onclick=()=>openTab('audio');
 $('#aspect').onchange=e=>mutate(()=>{P.aspect=e.target.value;applyAspect()});$('#pname').onchange=e=>mutate(()=>P.name=e.target.value||'Mijn project');
-$('#bNew').onclick=()=>modal('<h2>Nieuw project?</h2><p>De huidige tijdlijn wordt leeggemaakt. Je mediabibliotheek blijft bewaard.</p>',[{label:'Annuleren'},{label:'Nieuw project',cls:'primary',fn:()=>mutate(()=>{const keep=P.aspect;P=newProject();P.aspect=keep;sel=null;T=0})}]);
+$('#bNew').onclick=()=>newProj();$('#bProj').onclick=projectsDialog;addEventListener('pagehide',()=>{saveNow()});document.addEventListener('visibilitychange',()=>{if(document.hidden)saveNow()});
 addEventListener('keydown',e=>{if(e.target.closest('input,textarea,select')||exporting)return;const k=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
  if(k===' '){e.preventDefault();toggle()}else if(mod&&k==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if(mod&&k==='y'){e.preventDefault();redo()}else if(mod&&k==='d'){e.preventDefault();dupSel()}
  else if(k==='s'&&!mod){splitAt()}else if(k==='delete'||k==='backspace'){e.preventDefault();delSel()}else if(k==='arrowleft'){seek(T-(e.shiftKey?1:1/30))}else if(k==='arrowright'){seek(T+(e.shiftKey?1:1/30))}else if(k==='home')seek(0);else if(k==='end')seek(projDur());else if(k==='escape'){sel=null;renderTimeline();renderProps()}});
 async function restore(){if(!await idb.open())return;const recs=await idb.all('media')||[];for(const r of recs){if(!r.blob)continue;const m=Object.assign({},r,{url:URL.createObjectURL(r.blob)});if(m.type==='image'&&!m.err){const im=new Image();im.src=m.url;try{await im.decode()}catch(e){}imgs[m.id]=im}media.push(m)}
- const p=await idb.get('kv','project');if(p&&p.clips){P=Object.assign(newProject(),p);P.clips=P.clips.filter(c=>mediaById(c.mediaId));P.audios=P.audios.filter(a=>mediaById(a.mediaId));P.clips.forEach(c=>{c.fx=c.fx||[];c.adj=Object.assign({b:0,c:0,s:0,temp:0,vig:0},c.adj||{})})}}
+ projIndex=(await idb.get('kv','projIndex'))||[];const cur=await idb.get('kv','current');let p=cur?await idb.get('kv','proj:'+cur):null;
+ if(!p){const old=await idb.get('kv','project');if(old&&old.clips){p=old;p.id=p.id||uid();P=normProject(p);await saveNow();await idb.del('kv','project')}else if(projIndex.length){p=await idb.get('kv','proj:'+projIndex[0].id)}}
+ if(p)P=normProject(p);try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}}
 async function init(){setHead();renderLeft();renderProps();applyAspect();renderTimeline();updateUndo();requestAnimationFrame(loop);
  const bar=$('#splashBar'),pct=$('#splashPct'),st=performance.now(),MIN=2800;let restored=false;restore().then(()=>{restored=true;applyAspect();renderLeft();renderProps();renderTimeline();ensureFonts();$('#pname').value=P.name;if(P.clips.length)pps=clamp((tlScroll.clientWidth-HEAD-40)/Math.max(1,projDur()),8,120),renderTimeline();dirty=true});
  await new Promise(res=>{const f=()=>{const e=performance.now()-st;let p=Math.min(1,e/MIN);if(!restored)p=Math.min(p,.92);const sh=1-Math.pow(1-p,2.2);bar.style.width=(sh*100).toFixed(1)+'%';pct.textContent=Math.round(sh*100)+'%';if(p>=1)res();else requestAnimationFrame(f)};requestAnimationFrame(f)});
  setTimeout(()=>{$('#splash').classList.add('hide');fitCanvas()},250)}
-window.__ks={get P(){return P},set P(v){P=v},get media(){return media},get T(){return T},get sel(){return sel},set sel(v){sel=v},get playing(){return playing},get exporting(){return exporting},get lastExport(){return lastExport},seek,play,stop,splitAt,delSel,dupSel,undo,redo,mutate,layout,projDur,importFiles,addToTimeline,addText,addGen,renderMusic,renderSfx,openTab,exportDialog,startExport,render,syncMedia,activeVideo,cv,TRANS,FILTERS,FX,renderTimeline,renderProps};
+window.__ks={saveNow,openProject,newProj,delProj,renameProj,dupProj,projectsDialog,get projIndex(){return projIndex},get P(){return P},set P(v){P=v},get media(){return media},get T(){return T},get sel(){return sel},set sel(v){sel=v},get playing(){return playing},get exporting(){return exporting},get lastExport(){return lastExport},seek,play,stop,splitAt,delSel,dupSel,undo,redo,mutate,layout,projDur,importFiles,addToTimeline,addText,addGen,renderMusic,renderSfx,openTab,exportDialog,startExport,render,syncMedia,activeVideo,cv,TRANS,FILTERS,FX,renderTimeline,renderProps};
 init();
 if('serviceWorker'in navigator&&location.protocol==='https:'&&!/claude\.ai|claudeusercontent|anthropic/.test(location.hostname)){addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}
 </script>
